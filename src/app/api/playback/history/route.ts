@@ -10,18 +10,18 @@ export async function GET(req: Request) {
   );
 
   const { searchParams } = new URL(req.url);
-  const userId = searchParams.get("userId");
+  const profileId = searchParams.get("profileId");
   const tmdbId = searchParams.get("tmdbId");
   const mediaType = searchParams.get("mediaType") || "movie";
   const season = searchParams.get("season");
   const episode = searchParams.get("episode");
 
-  if (!userId || !tmdbId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
+  if (!profileId || !tmdbId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
 
   let query = supabase
-    .from("playback_history")
-    .select("timestamp_seconds, duration_seconds, completed")
-    .eq("user_id", userId)
+    .from("profile_watch_history")
+    .select("position_ms, duration_ms, completed")
+    .eq("profile_id", profileId)
     .eq("tmdb_id", tmdbId)
     .eq("media_type", mediaType);
 
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
   if (episode) query = query.eq("episode_number", Number(episode));
 
   const { data } = await query.maybeSingle();
-  return NextResponse.json(data || { timestamp_seconds: 0 });
+  return NextResponse.json(data || { position_ms: 0 });
 }
 
 export async function POST(req: Request) {
@@ -41,27 +41,28 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const {
-      userId, tmdbId, mediaType,
+      profileId, userId, tmdbId, mediaType,
       seasonNumber, episodeNumber,
-      timestampSeconds, durationSeconds, completed,
+      positionMs, durationMs, completed,
     } = body;
 
-    if (!userId || !tmdbId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
+    if (!profileId || !userId || !tmdbId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
 
     const payload: Record<string, any> = {
+      profile_id: profileId,
       user_id: userId,
       tmdb_id: tmdbId,
       media_type: mediaType || "movie",
-      timestamp_seconds: timestampSeconds || 0,
-      duration_seconds: durationSeconds || 0,
+      position_ms: Math.max(0, Math.floor(positionMs || 0)),
+      duration_ms: Math.max(0, Math.floor(durationMs || 0)),
       completed: !!completed,
       updated_at: new Date().toISOString(),
     };
     if (seasonNumber !== undefined) payload.season_number = seasonNumber;
     if (episodeNumber !== undefined) payload.episode_number = episodeNumber;
 
-    await supabase.from("playback_history").upsert(payload, {
-      onConflict: "user_id,tmdb_id,season_number,episode_number",
+    await supabase.from("profile_watch_history").upsert(payload, {
+      onConflict: "profile_id,tmdb_id,season_number,episode_number",
     });
 
     return NextResponse.json({ ok: true });
