@@ -56,6 +56,22 @@ export async function addMagnet(token: string, magnet: string): Promise<{ id: st
   });
 }
 
+export function buildMagnet(infoHash: string, name?: string): string {
+  const trackers = [
+    "udp://tracker.openbittorrent.com:80/announce",
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://tracker.coppersurfer.tk:6969/announce",
+  ];
+  let magnet = `magnet:?xt=urn:btih:${infoHash}`;
+  if (name) {
+    magnet += `&dn=${encodeURIComponent(name)}`;
+  }
+  for (const tr of trackers) {
+    magnet += `&tr=${encodeURIComponent(tr)}`;
+  }
+  return magnet;
+}
+
 export async function selectTorrentFiles(token: string, torrentId: string, files = "all"): Promise<unknown> {
   const body = `files=${files}`;
   return rdFetch(`/torrents/selectFiles/${torrentId}`, token, {

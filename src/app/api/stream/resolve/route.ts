@@ -22,11 +22,15 @@ function normalizeStreams(raw: TPBTorrent[]): TorrentStream[] {
     .map((item) => {
       const infoHash = item.info_hash?.trim().toLowerCase();
       if (!infoHash || infoHash.length !== 40) return null;
+      if (!/^[a-f0-9]{40}$/.test(infoHash)) return null;
+      if (infoHash === "0".repeat(40)) return null; // reject fake all-zero hashes
+      const seeders = Number(item.seeders || 0);
+      if (seeders <= 0) return null; // reject dead torrents
       return {
         title: item.name || `Stream ${infoHash.slice(0, 8)}`,
         infoHash,
         sizeBytes: Number(item.size || 0),
-        seeders: Number(item.seeders || 0),
+        seeders,
         source: "thepiratebay",
       } as TorrentStream;
     })

@@ -103,7 +103,12 @@ export function usePlaybackOrchestrator(params: {
         const res = await fetch("/api/stream/unrestrict", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ infoHash: target.infoHash, userId: params.userId, torrentId: existingTorrentId }),
+          body: JSON.stringify({
+            infoHash: target.infoHash,
+            userId: params.userId,
+            torrentId: existingTorrentId,
+            title: target.title,
+          }),
         });
         const data = (await res.json()) as UnrestrictResponse;
 
