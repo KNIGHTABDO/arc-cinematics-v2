@@ -7,8 +7,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ARC Cinematics",
-  description: "Next-generation serverless streaming",
+  title: "ARC Cinematics — Next-Gen Streaming",
+  description: "Serverless cinematic streaming with BYOD architecture",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

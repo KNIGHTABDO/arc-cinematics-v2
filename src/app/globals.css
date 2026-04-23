@@ -10,14 +10,36 @@
 :root {
   --background: #0a0a0a;
   --foreground: #ededed;
+  --arc-accent: #f59e0b;
+  --arc-accent-2: #d97706;
+  --arc-void: #050505;
+  --arc-surface: #111111;
+  --arc-surface-2: #1a1a1a;
 }
 
 html, body {
   background: var(--background);
   color: var(--foreground);
+  scroll-behavior: smooth;
 }
 
-/* Vidstack theme overrides */
-.vds-video-layout {
-  --video-brand: #f59e0b;
+/* Hide scrollbar for carousels */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Custom selection */
+::selection {
+  background: rgba(245, 158, 11, 0.3);
+  color: white;
+}
+
+/* Spin ring animation for profiles */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-ring {
+  animation: spin-slow 8s linear infinite;
 }
