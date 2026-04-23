@@ -24,6 +24,7 @@ export function usePlaybackOrchestrator(params: {
   mediaType: "movie" | "tv";
   seasonNumber?: number;
   episodeNumber?: number;
+  profileId?: string;
   userId?: string;
 }) {
   const [scoredStreams, setScoredStreams] = useState<TorrentStream[]>([]);
@@ -173,12 +174,13 @@ export function usePlaybackOrchestrator(params: {
     void negotiateAtIndex(currentIndex);
   }, [currentIndex, negotiateAtIndex]);
 
-  // 3. Resume position loader
+  // 3. Resume position loader (milliseconds → seconds for video element)
   const [resumeSeconds, setResumeSeconds] = useState(0);
   useEffect(() => {
-    if (!params.userId) return;
+    if (!params.profileId) return;
     let cancelled = false;
     fetch("/api/playback/history?" + new URLSearchParams({
+      profileId: params.profileId,
       tmdbId: params.tmdbId,
       mediaType: params.mediaType,
       season: params.seasonNumber ? String(params.seasonNumber) : "",
@@ -186,28 +188,29 @@ export function usePlaybackOrchestrator(params: {
     })).then(async (res) => {
       if (!res.ok || cancelled) return;
       const data = await res.json();
-      if (data?.timestamp_seconds) setResumeSeconds(data.timestamp_seconds);
+      if (data?.position_ms) setResumeSeconds(data.position_ms / 1000);
     });
     return () => { cancelled = true; };
-  }, [params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber, params.userId]);
+  }, [params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber, params.profileId]);
 
-  // 4. Save resume position every 10s
+  // 4. Save resume position every 10s (convert seconds → milliseconds)
   const saveResume = useCallback(
     async (seconds: number, duration: number) => {
-      if (!params.userId || resumeSaved.current) return;
+      if (!params.profileId || !params.userId || resumeSaved.current) return;
       resumeSaved.current = true;
       try {
         await fetch("/api/playback/history", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            profileId: params.profileId,
             userId: params.userId,
             tmdbId: params.tmdbId,
             mediaType: params.mediaType,
             seasonNumber: params.seasonNumber,
             episodeNumber: params.episodeNumber,
-            timestampSeconds: Math.floor(seconds),
-            durationSeconds: Math.floor(duration),
+            positionMs: Math.floor(seconds * 1000),
+            durationMs: Math.floor(duration * 1000),
             completed: seconds / duration > 0.95,
           }),
         });

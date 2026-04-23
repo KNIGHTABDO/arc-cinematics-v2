@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSupabase, supabase } from "@/components/supabase-provider";
-import { Plus, Trash2, Baby } from "lucide-react";
+import { Plus, Trash2, Baby, Lock } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -11,6 +11,7 @@ interface Profile {
   avatar_url: string | null;
   is_kids: boolean;
   user_id: string;
+  pin_hash?: string | null;
 }
 
 function avatarGradient(name: string) {
@@ -30,9 +31,12 @@ export default function ProfilesPage() {
   const { user, loading } = useSupabase();
   const router = useRouter();
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [pageLoading, setPageLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newPin, setNewPin] = useState("");
   const [isKids, setIsKids] = useState(false);
+  const [pinModal, setPinModal] = useState<{ profile: Profile; pin: string; error: string } | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -40,29 +44,71 @@ export default function ProfilesPage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("profiles").select("*").eq("user_id", user.id).then(({ data }) => {
-      if (data) setProfiles(data as Profile[]);
-    });
+    loadProfiles();
   }, [user]);
 
+  const loadProfiles = async () => {
+    if (!user) return;
+    setPageLoading(true);
+    const { data } = await supabase.from("profiles").select("*").eq("user_id", user.id);
+    let list = (data || []) as Profile[];
+    
+    // Auto-create default profile if none exist
+    if (list.length === 0) {
+      const { data: created } = await supabase.from("profiles").insert({
+        user_id: user.id,
+        name: "Default",
+        is_kids: false,
+      }).select().single();
+      if (created) list = [created as Profile];
+    }
+    
+    setProfiles(list);
+    setPageLoading(false);
+  };
+
   const selectProfile = (profile: Profile) => {
+    if (profile.pin_hash) {
+      setPinModal({ profile, pin: "", error: "" });
+      return;
+    }
+    activateProfile(profile);
+  };
+
+  const activateProfile = (profile: Profile) => {
     localStorage.setItem("arc_active_profile", profile.id);
     localStorage.setItem("arc_profile_name", profile.name);
     localStorage.setItem("arc_profile_kids", String(profile.is_kids));
+    window.dispatchEvent(new Event("arc-profile-change"));
     router.push("/browse");
+  };
+
+  const verifyPin = () => {
+    if (!pinModal) return;
+    if (pinModal.pin === pinModal.profile.pin_hash) {
+      setPinModal(null);
+      activateProfile(pinModal.profile);
+    } else {
+      setPinModal({ ...pinModal, error: "Incorrect PIN. Try again." });
+    }
   };
 
   const addProfile = async () => {
     if (!user || !newName.trim()) return;
-    const { data, error } = await supabase.from("profiles").insert({
+    const insertData: Record<string, unknown> = {
       user_id: user.id,
       name: newName.trim(),
       is_kids: isKids,
-    }).select().single();
+    };
+    if (newPin && /^\d{4}$/.test(newPin)) {
+      insertData.pin_hash = newPin; // plain 4-digit pin
+    }
+    const { data, error } = await supabase.from("profiles").insert(insertData).select().single();
     if (!error && data) {
       setProfiles((prev) => [...prev, data as Profile]);
       setShowAdd(false);
       setNewName("");
+      setNewPin("");
       setIsKids(false);
     }
   };
@@ -73,7 +119,13 @@ export default function ProfilesPage() {
     setProfiles((prev) => prev.filter((p) => p.id !== id));
   };
 
-  if (loading) return <div className="flex min-h-screen items-center justify-center bg-black text-white">Loading...</div>;
+  if (loading || pageLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black text-white">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-transparent border-t-amber-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-black px-6 text-white">
@@ -99,6 +151,11 @@ export default function ProfilesPage() {
                   <Baby size={12} className="text-white" />
                 </div>
               )}
+              {p.pin_hash && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                  <Lock size={20} className="text-white" />
+                </div>
+              )}
             </button>
             <span className="text-sm text-white/70">{p.name}</span>
             <button
@@ -113,7 +170,7 @@ export default function ProfilesPage() {
         {/* Add Profile */}
         <div className="flex flex-col items-center gap-3">
           {showAdd ? (
-            <div className="rounded-xl bg-zinc-900 p-4">
+            <div className="rounded-xl bg-zinc-900 p-4 w-64">
               <input
                 autoFocus
                 value={newName}
@@ -121,6 +178,14 @@ export default function ProfilesPage() {
                 placeholder="Profile name"
                 className="mb-2 w-full rounded bg-black/50 px-3 py-2 text-sm outline-none ring-1 ring-white/10"
                 onKeyDown={(e) => e.key === "Enter" && addProfile()}
+              />
+              <input
+                value={newPin}
+                onChange={(e) => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="PIN (4 digits, optional)"
+                type="password"
+                inputMode="numeric"
+                className="mb-2 w-full rounded bg-black/50 px-3 py-2 text-sm outline-none ring-1 ring-white/10"
               />
               <label className="mb-3 flex items-center gap-2 text-xs text-white/60">
                 <input type="checkbox" checked={isKids} onChange={(e) => setIsKids(e.target.checked)} />
@@ -142,6 +207,32 @@ export default function ProfilesPage() {
           <span className="text-sm text-white/50">Add Profile</span>
         </div>
       </div>
+
+      {/* PIN Modal */}
+      {pinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="w-72 rounded-xl bg-zinc-900 p-6 text-center">
+            <Lock size={32} className="mx-auto mb-3 text-amber-500" />
+            <p className="mb-1 text-sm font-semibold">Enter PIN for {pinModal.profile.name}</p>
+            <input
+              autoFocus
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={pinModal.pin}
+              onChange={(e) => setPinModal({ ...pinModal, pin: e.target.value.replace(/\D/g, ""), error: "" })}
+              onKeyDown={(e) => e.key === "Enter" && verifyPin()}
+              className="mb-3 w-full rounded bg-black/50 px-3 py-2 text-center text-lg tracking-[0.5em] outline-none ring-1 ring-white/10 focus:ring-amber-500"
+              placeholder="••••"
+            />
+            {pinModal.error && <p className="mb-3 text-xs text-red-400">{pinModal.error}</p>}
+            <div className="flex gap-2 justify-center">
+              <button onClick={verifyPin} className="rounded bg-amber-500 px-4 py-1.5 text-xs font-semibold text-black">Unlock</button>
+              <button onClick={() => setPinModal(null)} className="rounded bg-white/10 px-4 py-1.5 text-xs">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

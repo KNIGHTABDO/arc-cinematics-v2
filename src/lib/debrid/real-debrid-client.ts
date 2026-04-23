@@ -37,20 +37,32 @@ async function rdFetch<T>(
       const text = await res.text().catch(() => "");
       throw new Error(`Real-Debrid ${res.status}: ${text || res.statusText}`);
     }
-    return (await res.json()) as T;
+    const text = await res.text();
+    if (!text) return {} as T;
+    return JSON.parse(text) as T;
   } finally {
     clearTimeout(timeout);
   }
 }
 
 export async function addMagnet(token: string, magnet: string): Promise<{ id: string }> {
-  const body = new URLSearchParams({ magnet });
-  return rdFetch<{ id: string }>("/torrents/addMagnet", token, { method: "POST", body });
+  // Only encode '=' in magnet to prevent form parsing issues
+  // RD rejects fully URL-encoded magnets (: and ? must stay raw)
+  const body = `magnet=${magnet.replace(/=/g, "%3D")}`;
+  return rdFetch<{ id: string }>("/torrents/addMagnet", token, {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
 }
 
 export async function selectTorrentFiles(token: string, torrentId: string, files = "all"): Promise<unknown> {
-  const body = new URLSearchParams({ files });
-  return rdFetch(`/torrents/selectFiles/${torrentId}`, token, { method: "POST", body });
+  const body = `files=${files}`;
+  return rdFetch(`/torrents/selectFiles/${torrentId}`, token, {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
 }
 
 export async function getTorrentInfo(token: string, torrentId: string): Promise<RealDebridTorrentInfo> {
@@ -58,15 +70,19 @@ export async function getTorrentInfo(token: string, torrentId: string): Promise<
 }
 
 export async function unrestrictLink(token: string, link: string): Promise<{ download: string; filename?: string }> {
-  const body = new URLSearchParams({ link });
-  return rdFetch<{ download: string; filename?: string }>("/unrestrict/link", token, { method: "POST", body });
+  const body = `link=${link}`;
+  return rdFetch<{ download: string; filename?: string }>("/unrestrict/link", token, {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
 }
 
 export async function waitForTorrentReady(
   token: string,
   torrentId: string,
-  maxAttempts = 25,
-  intervalMs = 2000,
+  maxAttempts = 10,
+  intervalMs = 1500,
 ): Promise<RealDebridTorrentInfo> {
   let last: RealDebridTorrentInfo | null = null;
   for (let i = 0; i < maxAttempts; i++) {

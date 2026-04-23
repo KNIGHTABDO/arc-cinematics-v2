@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSupabase } from "@/components/supabase-provider";
 import { usePlaybackOrchestrator } from "@/lib/playback/orchestrator";
-import { Play, Pause, Volume2, VolumeX, Maximize, SkipForward, Settings } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Maximize, SkipForward, Settings, RefreshCw, ArrowRight } from "lucide-react";
 
 type ParsedId = {
   mediaType: "movie" | "tv";
@@ -34,12 +34,13 @@ export default function StreamPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const { user, loading, activeProfile } = useSupabase();
   const parsed = useMemo(() => parseWatchId(id), [id]);
-  const { user } = useSupabase();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [subtitleOn, setSubtitleOn] = useState(true);
   const [subtitleSrc, setSubtitleSrc] = useState<string | null>(null);
+  const [subtitleLang, setSubtitleLang] = useState("ar");
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [showNextPrompt, setShowNextPrompt] = useState(false);
   const [nextCountdown, setNextCountdown] = useState(15);
@@ -58,8 +59,26 @@ export default function StreamPage() {
     mediaType: parsed.mediaType,
     seasonNumber: parsed.season,
     episodeNumber: parsed.episode,
+    profileId: activeProfile?.id,
     userId: user?.id,
   });
+
+  // Auth + profile gates
+  useEffect(() => {
+    if (!loading && !user) router.push("/login");
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (!loading && user && !activeProfile) router.push("/profiles");
+  }, [user, loading, activeProfile, router]);
+
+  // Load preferred subtitle language
+  useEffect(() => {
+    const saved = localStorage.getItem("arc-settings");
+    if (saved) {
+      try { setSubtitleLang(JSON.parse(saved).language || "ar"); } catch {}
+    }
+  }, []);
 
   // Subtitle load
   useEffect(() => {
@@ -68,7 +87,7 @@ export default function StreamPage() {
       try {
         const url = new URL("/api/subtitles/proxy", window.location.origin);
         url.searchParams.set("tmdbId", parsed.tmdbId);
-        url.searchParams.set("lang", "ar");
+        url.searchParams.set("lang", subtitleLang);
         url.searchParams.set("mediaType", parsed.mediaType);
         if (parsed.season) url.searchParams.set("season", String(parsed.season));
         if (parsed.episode) url.searchParams.set("episode", String(parsed.episode));
@@ -86,7 +105,7 @@ export default function StreamPage() {
     };
     void load();
     return () => { cancelled = true; };
-  }, [parsed.tmdbId, parsed.mediaType, parsed.season, parsed.episode]);
+  }, [parsed.tmdbId, parsed.mediaType, parsed.season, parsed.episode, subtitleLang]);
 
   // Resume position
   useEffect(() => {
@@ -214,6 +233,96 @@ export default function StreamPage() {
 
   const activeIndex = orchestrator.currentIndex;
 
+  // Loading / Pending / Error states
+  const renderPlayerState = () => {
+    if (orchestrator.activePlayableUrl) return null;
+
+    // Pending with polling
+    if (orchestrator.pendingStatus) {
+      const statusLabels: Record<string, string> = {
+        magnet_conversion: "Converting magnet...",
+        waiting_files_selection: "Selecting files...",
+        queued: "Queued...",
+        downloading: "Downloading to cache...",
+        compressing: "Processing...",
+        uploading: "Processing...",
+      };
+      const label = statusLabels[orchestrator.pendingStatus.status] || "Preparing stream...";
+      const progress = orchestrator.pendingStatus.progress || 0;
+
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-5 px-6">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-amber-500" />
+          <div className="text-center">
+            <p className="text-base font-medium text-white">{label}</p>
+            <p className="mt-1 text-xs text-white/50">This can take 30–90 seconds for uncached torrents</p>
+          </div>
+          {progress > 0 && (
+            <div className="w-64">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-amber-500 transition-all duration-500"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="mt-1 text-center text-[10px] text-white/40">{progress}%</p>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button
+              onClick={() => orchestrator.retryCurrent()}
+              className="flex items-center gap-1.5 rounded bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/20 transition"
+            >
+              <RefreshCw size={12} /> Refresh Now
+            </button>
+            <button
+              onClick={() => orchestrator.fallbackToNext()}
+              className="flex items-center gap-1.5 rounded bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/20 transition"
+            >
+              <ArrowRight size={12} /> Try Next
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Error
+    if (orchestrator.error) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-4 px-6">
+          <div className="rounded-full bg-red-500/10 p-4">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-400">
+              <circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>
+            </svg>
+          </div>
+          <p className="text-center text-sm text-white/60 max-w-md">{orchestrator.error}</p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => orchestrator.retryCurrent()}
+              className="rounded bg-amber-500 px-4 py-2 text-xs font-medium text-black hover:bg-amber-400 transition"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => orchestrator.fallbackToNext()}
+              className="rounded bg-white/10 px-4 py-2 text-xs text-white hover:bg-white/20 transition"
+            >
+              Try Next Stream
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Initial loading
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/20 border-t-amber-500" />
+        <p className="text-sm text-white/50">Finding best stream...</p>
+      </div>
+    );
+  };
+
   return (
     <div
       ref={containerRef}
@@ -221,11 +330,9 @@ export default function StreamPage() {
       onMouseMove={showControlsTemporarily}
       onClick={showControlsTemporarily}
     >
-      {!orchestrator.activePlayableUrl ? (
-        <div className="flex h-full items-center justify-center text-sm text-white/70">
-          {orchestrator.error || "Negotiating best stream..."}
-        </div>
-      ) : (
+      {renderPlayerState()}
+
+      {orchestrator.activePlayableUrl && (
         <video
           ref={videoRef}
           src={orchestrator.activePlayableUrl}
@@ -241,7 +348,7 @@ export default function StreamPage() {
           autoPlay
         >
           {subtitleOn && subtitleSrc ? (
-            <track kind="subtitles" src={subtitleSrc} label="Arabic" srcLang="ar" default />
+            <track kind="subtitles" src={subtitleSrc} label={subtitleLang.toUpperCase()} srcLang={subtitleLang} default />
           ) : null}
         </video>
       )}

@@ -19,7 +19,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) setError(error.message);
-    else router.push("/browse");
+    else router.push("/profiles");
   };
 
   return (

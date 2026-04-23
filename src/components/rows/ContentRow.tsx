@@ -3,6 +3,7 @@
 import { useRef, useEffect } from "react";
 import { MovieCard, HeroCard, type TMDBMovie } from "@/components/cards/MovieCard";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { motion } from "framer-motion";
 
 interface ContentRowProps {
   label: string;
@@ -32,18 +33,24 @@ export function ContentRow({ label, items, variant = "default", type = "movie" }
   const scroll = (dir: number) => {
     const el = scrollerRef.current;
     if (!el) return;
-    el.scrollBy({ left: dir * 400, behavior: "smooth" });
+    el.scrollBy({ left: dir * window.innerWidth * 0.75, behavior: "smooth" });
   };
 
   if (!items || items.length === 0) return null;
 
   return (
-    <section className="relative mb-8">
+    <motion.section
+      initial={{ opacity: 0 }}
+      whileInView={{ opacity: 1 }}
+      viewport={{ once: true, margin: "-50px" }}
+      transition={{ duration: 0.5 }}
+      className="relative mb-8"
+    >
       <div className="mb-3 flex items-center justify-between px-[4vw]">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-white/70">{label}</h2>
         <div className="flex gap-1">
-          <button onClick={() => scroll(-1)} className="rounded p-1 text-white/40 hover:bg-white/10 hover:text-white"><ChevronLeft size={18} /></button>
-          <button onClick={() => scroll(1)} className="rounded p-1 text-white/40 hover:bg-white/10 hover:text-white"><ChevronRight size={18} /></button>
+          <button onClick={() => scroll(-1)} className="rounded p-1 text-white/40 hover:bg-white/10 hover:text-white transition"><ChevronLeft size={18} /></button>
+          <button onClick={() => scroll(1)} className="rounded p-1 text-white/40 hover:bg-white/10 hover:text-white transition"><ChevronRight size={18} /></button>
         </div>
       </div>
       <div
@@ -51,14 +58,14 @@ export function ContentRow({ label, items, variant = "default", type = "movie" }
         className="flex gap-4 overflow-x-auto px-[4vw] pb-4 scrollbar-hide"
         style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
-        {items.map((item) =>
+        {items.map((item, i) =>
           variant === "hero" ? (
-            <HeroCard key={item.id} movie={item} type={type} />
+            <HeroCard key={item.id} movie={item} type={type} index={i} />
           ) : (
-            <MovieCard key={item.id} movie={item} type={type} />
+            <MovieCard key={item.id} movie={item} type={type} index={i} />
           )
         )}
       </div>
-    </section>
+    </motion.section>
   );
 }
