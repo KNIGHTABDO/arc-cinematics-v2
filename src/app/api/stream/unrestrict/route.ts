@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { addMagnet, selectTorrentFiles, unrestrictLink, waitForTorrentReady, getTorrentInfo } from "@/lib/debrid/real-debrid-client";
+import {
+  checkTorrentCached,
+  unrestrictLink,
+  waitForTorrentReady,
+  getTorrentInfo,
+  deleteTorrent,
+} from "@/lib/debrid/real-debrid-client";
 
 export const runtime = "edge";
 export const maxDuration = 30;
@@ -13,7 +19,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { infoHash, userId, torrentId: existingTorrentId, title } = body;
+    const { infoHash, userId, torrentId: existingTorrentId, title, mode } = body;
 
     if (!infoHash || !/^[a-fA-F0-9]{40}$/.test(infoHash)) {
       return NextResponse.json({ error: "Invalid infoHash" }, { status: 400 });
@@ -43,84 +49,57 @@ export async function POST(req: Request) {
     }
 
     const magnet = `magnet:?xt=urn:btih:${infoHash}`;
-    let torrentId = existingTorrentId;
 
-    // Step 1: Add magnet (if no existing torrentId)
-    if (!torrentId) {
-      try {
-        const added = await addMagnet(token, magnet);
-        torrentId = added.id;
-      } catch (e: any) {
-        return NextResponse.json({ error: `addMagnet failed: ${e.message}` }, { status: 502 });
+    // MODE 1: rapid cache check (default)
+    // Add magnet, poll briefly, if not cached → return notCached so client tries next stream
+    if (mode !== "poll") {
+      const result = await checkTorrentCached(token, magnet, 12);
+
+      if (result.cached) {
+        const unrestricted = await unrestrictLink(token, result.info.links[0]);
+        return NextResponse.json({
+          playableUrl: unrestricted.download,
+          filename: unrestricted.filename || result.info.filename,
+          torrentId: result.torrentId,
+          status: "ready",
+        });
       }
 
-      // Step 2: Select files
-      try {
-        await selectTorrentFiles(token, torrentId, "all");
-      } catch {
-        // ignore — may already be selected
-      }
+      return NextResponse.json({
+        notCached: true,
+        message: "This torrent is not cached on Real-Debrid. Trying next stream...",
+      }, { status: 202 });
     }
 
-    // Step 3: Check current status
-    let info;
-    try {
-      info = await getTorrentInfo(token, torrentId);
-    } catch (e: any) {
-      return NextResponse.json({ error: `getInfo failed: ${e.message}` }, { status: 502 });
+    // MODE 2: long poll (for when user explicitly wants to wait for a specific torrent)
+    // Only used when client passes mode="poll" + existingTorrentId
+    if (!existingTorrentId) {
+      return NextResponse.json({ error: "poll mode requires torrentId" }, { status: 400 });
     }
 
-    // If already downloaded, unrestrict immediately
+    const info = await getTorrentInfo(token, existingTorrentId);
+
     if (info.status === "downloaded" && Array.isArray(info.links) && info.links.length > 0) {
       const unrestricted = await unrestrictLink(token, info.links[0]);
       return NextResponse.json({
         playableUrl: unrestricted.download,
         filename: unrestricted.filename || info.filename,
-        torrentId,
+        torrentId: existingTorrentId,
         status: "ready",
       });
     }
 
-    // If error/virus/dead
     if (["error", "virus", "dead"].includes(info.status)) {
-      return NextResponse.json({ error: `Torrent failed: ${info.status}`, torrentId, status: info.status }, { status: 502 });
+      return NextResponse.json({ error: `Torrent failed: ${info.status}` }, { status: 502 });
     }
 
-    // If still processing, return pending so client can poll
-    if (["magnet_conversion", "queued", "downloading", "compressing", "uploading", "waiting_files_selection"].includes(info.status)) {
-      return NextResponse.json({
-        pending: true,
-        status: info.status,
-        progress: info.progress || 0,
-        torrentId,
-        message: `Preparing stream... (${info.status})`,
-      }, { status: 202 });
-    }
-
-    // Unknown status — try waiting briefly
-    try {
-      info = await waitForTorrentReady(token, torrentId, 8, 1500);
-    } catch {
-      return NextResponse.json({
-        pending: true,
-        status: info.status,
-        progress: info.progress || 0,
-        torrentId,
-        message: `Preparing stream... (${info.status})`,
-      }, { status: 202 });
-    }
-
-    if (Array.isArray(info.links) && info.links.length > 0) {
-      const unrestricted = await unrestrictLink(token, info.links[0]);
-      return NextResponse.json({
-        playableUrl: unrestricted.download,
-        filename: unrestricted.filename || info.filename,
-        torrentId,
-        status: "ready",
-      });
-    }
-
-    return NextResponse.json({ error: "No playable links", torrentId }, { status: 502 });
+    return NextResponse.json({
+      pending: true,
+      status: info.status,
+      progress: info.progress || 0,
+      torrentId: existingTorrentId,
+      message: `Preparing stream... (${info.status})`,
+    }, { status: 202 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

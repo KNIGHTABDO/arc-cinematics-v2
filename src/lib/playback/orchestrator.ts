@@ -12,6 +12,7 @@ interface UnrestrictResponse {
   playableUrl?: string;
   filename?: string;
   pending?: boolean;
+  notCached?: boolean;
   status?: string;
   progress?: number;
   torrentId?: string;
@@ -39,13 +40,12 @@ function parseTorrentio(data: TorrentioResponse): TorrentStream[] {
       if (!/^[a-f0-9]{40}$/.test(infoHash)) return null;
       if (infoHash === "0".repeat(40)) return null;
       const title = s.title || s.name || `Stream ${infoHash.slice(0, 8)}`;
-      // Extract quality hint from title
       const quality = /2160p|4k/i.test(title) ? "2160p" : /1080p/i.test(title) ? "1080p" : /720p/i.test(title) ? "720p" : "SD";
       return {
         title: `${quality} · ${title}`.slice(0, 120),
         infoHash,
         sizeBytes: 0,
-        seeders: 100, // Torrentio streams are typically well-seeded
+        seeders: 100,
         source: "torrentio",
       } as TorrentStream;
     })
@@ -93,9 +93,9 @@ export function usePlaybackOrchestrator(params: {
   const [error, setError] = useState<string | null>(null);
   const [pendingStatus, setPendingStatus] = useState<{ status: string; progress: number; torrentId?: string } | null>(null);
   const resumeSaved = useRef(false);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isRunning = useRef(false);
 
-  // 1. Resolve streams on mount — try Torrentio client-side first, then TPB fallback
+  // 1. Resolve streams on mount
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -103,16 +103,10 @@ export function usePlaybackOrchestrator(params: {
       setError(null);
       setPendingStatus(null);
       try {
-        // Try Torrentio first (client-side = bypasses Vercel Cloudflare block)
         let streams = await fetchTorrentio(params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber);
-        let source = "torrentio";
-
-        // Fallback to TPB if Torrentio returns nothing
         if (streams.length === 0) {
           streams = await fetchTPB(params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber);
-          source = "thepiratebay";
         }
-
         if (!cancelled) {
           setScoredStreams(streams);
           setCurrentIndex(0);
@@ -127,10 +121,7 @@ export function usePlaybackOrchestrator(params: {
       }
     };
     void load();
-    return () => {
-      cancelled = true;
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
+    return () => { cancelled = true; };
   }, [params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber]);
 
   // 2. Auto-negotiate first stream when resolved
@@ -141,23 +132,21 @@ export function usePlaybackOrchestrator(params: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scoredStreams, activePlayableUrl, isLoading, error, pendingStatus]);
 
-  const clearPolling = () => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  };
-
   const negotiateAtIndex = useCallback(
-    async (index: number, existingTorrentId?: string) => {
+    async (index: number) => {
+      if (isRunning.current) return; // prevent concurrent attempts
       if (index < 0 || index >= scoredStreams.length) {
         setError("No more streams available.");
         return;
       }
+
+      isRunning.current = true;
       const target = scoredStreams[index];
+      setCurrentIndex(index);
       setIsLoading(true);
       setError(null);
       setPendingStatus(null);
+
       try {
         const res = await fetch("/api/stream/unrestrict", {
           method: "POST",
@@ -165,8 +154,8 @@ export function usePlaybackOrchestrator(params: {
           body: JSON.stringify({
             infoHash: target.infoHash,
             userId: params.userId,
-            torrentId: existingTorrentId,
             title: target.title,
+            // no mode = rapid cache check (default)
           }),
         });
         const data = (await res.json()) as UnrestrictResponse;
@@ -175,52 +164,52 @@ export function usePlaybackOrchestrator(params: {
           throw new Error(data.error);
         }
 
+        if (data.playableUrl) {
+          setActivePlayableUrl(data.playableUrl);
+          setActiveFilename(data.filename || target.title);
+          setPendingStatus(null);
+          isRunning.current = false;
+          return;
+        }
+
+        if (data.notCached) {
+          // Try next candidate immediately
+          const next = index + 1;
+          if (next < scoredStreams.length) {
+            setPendingStatus({
+              status: "trying_next",
+              progress: Math.round(((index + 1) / scoredStreams.length) * 100),
+            });
+            isRunning.current = false;
+            void negotiateAtIndex(next);
+            return;
+          }
+          throw new Error("This title is not cached on Real-Debrid. Try again later or pick a different title.");
+        }
+
         if (data.pending) {
-          setCurrentIndex(index);
+          // Long poll mode — only if server explicitly returns pending
           setPendingStatus({
             status: data.status || "preparing",
             progress: data.progress || 0,
             torrentId: data.torrentId,
           });
-          setIsLoading(false);
-          // Start polling
-          clearPolling();
-          let attempts = 0;
-          const maxAttempts = 30; // ~150 seconds
-          pollingRef.current = setInterval(() => {
-            attempts++;
-            if (attempts > maxAttempts) {
-              clearPolling();
-              setError("Stream preparation timed out. Try another quality or retry.");
-              setPendingStatus(null);
-              return;
-            }
-            void negotiateAtIndex(index, data.torrentId);
-          }, 5000);
+          isRunning.current = false;
           return;
         }
 
-        if (data.playableUrl) {
-          clearPolling();
-          setCurrentIndex(index);
-          setActivePlayableUrl(data.playableUrl);
-          setActiveFilename(data.filename || target.title);
-          setPendingStatus(null);
-        } else {
-          throw new Error("No playable URL returned");
-        }
+        throw new Error("No playable URL returned");
       } catch (e: any) {
-        clearPolling();
         setError(e.message || "Failed to unrestrict stream");
       } finally {
         setIsLoading(false);
+        isRunning.current = false;
       }
     },
     [scoredStreams, params.userId],
   );
 
   const fallbackToNext = useCallback(() => {
-    clearPolling();
     setPendingStatus(null);
     setError(null);
     const next = currentIndex + 1;
@@ -232,13 +221,12 @@ export function usePlaybackOrchestrator(params: {
   }, [currentIndex, scoredStreams.length, negotiateAtIndex]);
 
   const retryCurrent = useCallback(() => {
-    clearPolling();
     setError(null);
     setPendingStatus(null);
     void negotiateAtIndex(currentIndex);
   }, [currentIndex, negotiateAtIndex]);
 
-  // 3. Resume position loader (milliseconds → seconds for video element)
+  // 3. Resume position loader
   const [resumeSeconds, setResumeSeconds] = useState(0);
   useEffect(() => {
     if (!params.profileId) return;
@@ -257,7 +245,7 @@ export function usePlaybackOrchestrator(params: {
     return () => { cancelled = true; };
   }, [params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber, params.profileId]);
 
-  // 4. Save resume position every 10s (convert seconds → milliseconds)
+  // 4. Save resume position every 10s
   const saveResume = useCallback(
     async (seconds: number, duration: number) => {
       if (!params.profileId || !params.userId || resumeSaved.current) return;

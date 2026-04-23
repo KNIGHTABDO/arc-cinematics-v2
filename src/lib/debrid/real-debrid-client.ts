@@ -11,6 +11,8 @@ export interface RealDebridTorrentInfo {
   filename: string;
   files: RealDebridTorrentInfoFile[];
   links: string[];
+  progress?: number;
+  hash?: string;
 }
 
 const RD_BASE = "https://api.real-debrid.com/rest/1.0";
@@ -54,6 +56,16 @@ export async function addMagnet(token: string, magnet: string): Promise<{ id: st
   });
 }
 
+export async function deleteTorrent(token: string, torrentId: string): Promise<void> {
+  try {
+    await rdFetch(`/torrents/delete/${torrentId}`, token, {
+      method: "DELETE",
+    });
+  } catch {
+    // best-effort cleanup
+  }
+}
+
 export async function selectTorrentFiles(token: string, torrentId: string, files = "all"): Promise<unknown> {
   const body = new URLSearchParams({ files });
   return rdFetch(`/torrents/selectFiles/${torrentId}`, token, {
@@ -91,4 +103,58 @@ export async function waitForTorrentReady(
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error(`Torrent not ready in time. Last status: ${last?.status || "unknown"}`);
+}
+
+/**
+ * Quick cache check: add magnet, select files, poll briefly.
+ * Returns { cached: true, info } if downloaded quickly.
+ * Returns { cached: false } if not cached (deletes the torrent).
+ */
+export async function checkTorrentCached(
+  token: string,
+  magnet: string,
+  pollSeconds = 12,
+): Promise<{ cached: true; info: RealDebridTorrentInfo; torrentId: string } | { cached: false; torrentId?: string }> {
+  const added = await addMagnet(token, magnet);
+  const torrentId = added.id;
+
+  try {
+    await selectTorrentFiles(token, torrentId, "all");
+  } catch {
+    // may already be selected
+  }
+
+  const start = Date.now();
+  const intervalMs = 1500;
+  const maxAttempts = Math.max(3, Math.floor((pollSeconds * 1000) / intervalMs));
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const info = await getTorrentInfo(token, torrentId);
+
+    if (info.status === "downloaded" && Array.isArray(info.links) && info.links.length > 0) {
+      return { cached: true, info, torrentId };
+    }
+
+    if (["error", "virus", "dead", "magnet_error"].includes(info.status)) {
+      await deleteTorrent(token, torrentId);
+      return { cached: false };
+    }
+
+    // If progress stays at 0 for multiple checks, it's likely dead/uncached
+    if (i >= 4 && (info.progress || 0) === 0 && info.status === "downloading") {
+      await deleteTorrent(token, torrentId);
+      return { cached: false };
+    }
+
+    const elapsed = Date.now() - start;
+    if (elapsed >= pollSeconds * 1000) {
+      break;
+    }
+
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+
+  // Not cached in time — delete to avoid cluttering user's RD account
+  await deleteTorrent(token, torrentId);
+  return { cached: false };
 }
