@@ -42,6 +42,7 @@ export default function StreamPage() {
   const [subtitleSrc, setSubtitleSrc] = useState<string | null>(null);
   const [subtitleLang, setSubtitleLang] = useState("ar");
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [mkvWarningShown, setMkvWarningShown] = useState(false);
   const [showNextPrompt, setShowNextPrompt] = useState(false);
   const [nextCountdown, setNextCountdown] = useState(15);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -53,6 +54,7 @@ export default function StreamPage() {
   const [buffering, setBuffering] = useState(false);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef({ current: 0, duration: 0 });
+  const playAttemptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const orchestrator = usePlaybackOrchestrator({
     tmdbId: parsed.tmdbId,
@@ -107,6 +109,25 @@ export default function StreamPage() {
     return () => { cancelled = true; };
   }, [parsed.tmdbId, parsed.mediaType, parsed.season, parsed.episode, subtitleLang]);
 
+  // Auto-fallback if video doesn't start playing within 10s
+  useEffect(() => {
+    if (!orchestrator.activePlayableUrl) return;
+    if (playAttemptTimer.current) clearTimeout(playAttemptTimer.current);
+    playAttemptTimer.current = setTimeout(() => {
+      if (!isPlaying && !buffering) {
+        const isMkv = orchestrator.activeFilename?.toLowerCase().endsWith(".mkv");
+        setPlayerError(isMkv ? "MKV not loading. Trying next stream..." : "Stream not loading. Trying next...");
+        setTimeout(() => {
+          setPlayerError(null);
+          orchestrator.fallbackToNext();
+        }, 1500);
+      }
+    }, 10000);
+    return () => {
+      if (playAttemptTimer.current) clearTimeout(playAttemptTimer.current);
+    };
+  }, [orchestrator.activePlayableUrl, orchestrator.activeFilename, isPlaying, buffering]);
+
   // Resume position
   useEffect(() => {
     if (orchestrator.resumeSeconds > 0 && videoRef.current) {
@@ -134,12 +155,31 @@ export default function StreamPage() {
   }, [parsed.mediaType, showNextPrompt]);
 
   const onError = useCallback(() => {
-    setPlayerError("Playback failed. Switching to next candidate...");
-    orchestrator.fallbackToNext();
-  }, [orchestrator]);
+    const v = videoRef.current;
+    const isMkv = orchestrator.activeFilename?.toLowerCase().endsWith(".mkv");
+    if (isMkv && !mkvWarningShown) {
+      setMkvWarningShown(true);
+      setPlayerError("MKV format not supported on this device. Trying next stream...");
+    } else {
+      setPlayerError("Playback failed. Switching to next candidate...");
+    }
+    // Small delay so user sees the message before switching
+    setTimeout(() => {
+      setPlayerError(null);
+      orchestrator.fallbackToNext();
+    }, 2000);
+  }, [orchestrator, mkvWarningShown]);
 
   const onWaiting = useCallback(() => setBuffering(true), []);
-  const onPlaying = useCallback(() => { setBuffering(false); setIsPlaying(true); }, []);
+  const onPlaying = useCallback(() => {
+    setBuffering(false);
+    setIsPlaying(true);
+    setMkvWarningShown(false);
+    if (playAttemptTimer.current) {
+      clearTimeout(playAttemptTimer.current);
+      playAttemptTimer.current = null;
+    }
+  }, []);
   const onPause = useCallback(() => setIsPlaying(false), []);
 
   // Save resume every 10s
@@ -425,24 +465,30 @@ export default function StreamPage() {
             {orchestrator.scoredStreams.length > 1 && (
               <div className="flex items-center gap-1">
                 <Settings size={16} className="text-white/60" />
-                {orchestrator.scoredStreams.slice(0, 5).map((stream, i) => (
-                  <button
-                    key={stream.infoHash}
-                    onClick={() => void handleQualityChange(i)}
-                    className={`rounded border px-2 py-0.5 text-[10px] ${
-                      i === activeIndex ? "border-amber-500 text-amber-400" : "border-white/20 text-white/50 hover:border-white/40"
-                    }`}
-                    title={stream.title}
-                  >
-                    {stream.title.includes("2160p") || stream.title.includes("4K")
-                      ? "4K"
-                      : stream.title.includes("1080p")
-                      ? "1080p"
-                      : stream.title.includes("720p")
-                      ? "720p"
-                      : "SD"}
-                  </button>
-                ))}
+                {orchestrator.scoredStreams.slice(0, 5).map((stream, i) => {
+                  const label = stream.title.includes("2160p") || stream.title.includes("4K")
+                    ? "4K"
+                    : stream.title.includes("1080p")
+                    ? "1080p"
+                    : stream.title.includes("720p")
+                    ? "720p"
+                    : "SD";
+                  const containerBadge = stream.container && stream.container !== "unknown"
+                    ? stream.container.toUpperCase()
+                    : null;
+                  return (
+                    <button
+                      key={stream.infoHash}
+                      onClick={() => void handleQualityChange(i)}
+                      className={`rounded border px-2 py-0.5 text-[10px] ${
+                        i === activeIndex ? "border-amber-500 text-amber-400" : "border-white/20 text-white/50 hover:border-white/40"
+                      }`}
+                      title={stream.title}
+                    >
+                      {label}{containerBadge ? ` · ${containerBadge}` : ""}
+                    </button>
+                  );
+                })}
               </div>
             )}
             <button onClick={toggleFullscreen} className="rounded p-2 hover:bg-white/10">

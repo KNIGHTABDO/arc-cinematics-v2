@@ -5,6 +5,7 @@ export interface TorrentStream {
   seeders: number;
   source?: string;
   score?: number;
+  container?: "mkv" | "mp4" | "avi" | "webm" | "unknown";
 }
 
 export interface ClientCapabilities {
@@ -17,8 +18,17 @@ export class StreamScoringEngine {
   private static readonly HEVC_REGEX = /x265|hevc|h265|hvc1/i;
   private static readonly REMUX_REGEX = /remux|bluray/i;
   private static readonly MP4_REGEX = /\.mp4/i;
+  private static readonly MKV_REGEX = /\.mkv/i;
   private static readonly ATMOS_71_REGEX = /7\.1|atmos|truehd/i;
   private static readonly SURROUND_51_REGEX = /5\.1|dts|ddp/i;
+
+  public static detectContainer(title: string): TorrentStream["container"] {
+    if (/\.mp4(\?|$|\s)/i.test(title)) return "mp4";
+    if (/\.mkv(\?|$|\s)/i.test(title)) return "mkv";
+    if (/\.avi(\?|$|\s)/i.test(title)) return "avi";
+    if (/\.webm(\?|$|\s)/i.test(title)) return "webm";
+    return "unknown";
+  }
 
   public static rankStreams(streams: TorrentStream[], capabilities: ClientCapabilities): TorrentStream[] {
     return streams
@@ -60,9 +70,15 @@ export class StreamScoringEngine {
     else if (stream.sizeBytes < 2_000_000_000) score -= 15;
 
     if (capabilities.isIOS) {
-      if (!this.MP4_REGEX.test(title)) {
-        score *= 0.1;
-      } else if (isHEVC) {
+      const container = stream.container || this.detectContainer(title);
+      if (container === "mp4" || this.MP4_REGEX.test(title)) {
+        score += 25; // strong boost for MP4 on iOS
+      } else if (container === "mkv" || this.MKV_REGEX.test(title)) {
+        score -= 40; // heavy penalty for MKV on iOS — Safari can't play it
+      } else {
+        score -= 10; // unknown container, risky on iOS
+      }
+      if (isHEVC) {
         score *= 1.2;
       }
     }

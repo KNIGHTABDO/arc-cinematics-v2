@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TorrentStream } from "@/lib/playback/scoring-engine";
+import { StreamScoringEngine } from "@/lib/playback/scoring-engine";
 
 interface StreamResponse {
   source: string;
@@ -31,6 +32,13 @@ interface TorrentioResponse {
   streams?: TorrentioStream[];
 }
 
+function getClientCapabilities() {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
+  const supportsHEVC = isIOS && /iP(hone|ad|od) OS 1[1-9]|Mac OS X 1[0-9]/.test(ua);
+  return { isIOS, supportsHEVC, preferredLanguage: "en" };
+}
+
 function parseTorrentio(data: TorrentioResponse): TorrentStream[] {
   const streams = data.streams || [];
   return streams
@@ -41,12 +49,14 @@ function parseTorrentio(data: TorrentioResponse): TorrentStream[] {
       if (infoHash === "0".repeat(40)) return null;
       const title = s.title || s.name || `Stream ${infoHash.slice(0, 8)}`;
       const quality = /2160p|4k/i.test(title) ? "2160p" : /1080p/i.test(title) ? "1080p" : /720p/i.test(title) ? "720p" : "SD";
+      const container = StreamScoringEngine.detectContainer(title);
       return {
         title: `${quality} · ${title}`.slice(0, 120),
         infoHash,
         sizeBytes: 0,
         seeders: 100,
         source: "torrentio",
+        container,
       } as TorrentStream;
     })
     .filter(Boolean) as TorrentStream[];
@@ -74,7 +84,11 @@ async function fetchTPB(tmdbId: string, mediaType: "movie" | "tv", season?: numb
   const res = await fetch(url.toString());
   if (!res.ok) return [];
   const data = (await res.json()) as StreamResponse;
-  return data.streams || [];
+  // Tag containers from TPB titles if possible
+  return (data.streams || []).map((s) => ({
+    ...s,
+    container: s.container || StreamScoringEngine.detectContainer(s.title),
+  }));
 }
 
 export function usePlaybackOrchestrator(params: {
@@ -95,7 +109,7 @@ export function usePlaybackOrchestrator(params: {
   const resumeSaved = useRef(false);
   const isRunning = useRef(false);
 
-  // 1. Resolve streams on mount
+  // 1. Resolve streams on mount + score them
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -108,9 +122,12 @@ export function usePlaybackOrchestrator(params: {
           streams = await fetchTPB(params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber);
         }
         if (!cancelled) {
-          setScoredStreams(streams);
+          // Score and rank streams by client capabilities
+          const caps = getClientCapabilities();
+          const ranked = StreamScoringEngine.rankStreams(streams, caps);
+          setScoredStreams(ranked);
           setCurrentIndex(0);
-          if (streams.length === 0) {
+          if (ranked.length === 0) {
             setError("No streams found. This title may not be available yet.");
           }
         }
