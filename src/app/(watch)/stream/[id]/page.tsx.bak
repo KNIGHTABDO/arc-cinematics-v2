@@ -5,8 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useSupabase } from "@/components/supabase-provider";
 import { usePlaybackOrchestrator } from "@/lib/playback/orchestrator";
 import { Play, Pause, Volume2, VolumeX, Maximize, Settings, RefreshCw, ArrowRight, Globe, Crown } from "lucide-react";
-import { buildFreeEmbedUrls } from "@/lib/streaming/free-sources";
-import { isIOS, buildInfuseUrl, buildVLCUrl, getPlayerOptions } from "@/lib/streaming/ios-players";
+import { buildFreeEmbedUrls, isIOS } from "@/lib/streaming/free-sources";
 
 type ParsedId = {
   mediaType: "movie" | "tv";
@@ -59,10 +58,6 @@ export default function StreamPage() {
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef({ current: 0, duration: 0 });
   const playAttemptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // iOS native player modal
-  const [showIOSModal, setShowIOSModal] = useState(false);
-  const [iosPlayerOptions, setIosPlayerOptions] = useState<{id: string, name: string, description: string, icon: string, recommended: boolean}[]>([]);
-
 
   // Free stream state (iOS only)
   const [sourceMode, setSourceMode] = useState<SourceMode>("premium");
@@ -191,27 +186,15 @@ export default function StreamPage() {
     const isMkv = orchestrator.activeFilename?.toLowerCase().endsWith(".mkv");
     if (isMkv && !mkvWarningShown) {
       setMkvWarningShown(true);
-      if (isIOS()) {
-        setPlayerError("MKV not supported in Safari. Opening player options...");
-        setTimeout(() => {
-          setPlayerError(null);
-          openIOSPlayerModal();
-        }, 1500);
-      } else {
-        setPlayerError("MKV format not supported on this device. Trying next stream...");
-        setTimeout(() => {
-          setPlayerError(null);
-          orchestrator.fallbackToNext();
-        }, 2000);
-      }
+      setPlayerError("MKV format not supported on this device. Trying next stream...");
     } else {
       setPlayerError("Playback failed. Switching to next candidate...");
-      setTimeout(() => {
-        setPlayerError(null);
-        orchestrator.fallbackToNext();
-      }, 2000);
     }
-  }, [orchestrator, mkvWarningShown, openIOSPlayerModal]);
+    setTimeout(() => {
+      setPlayerError(null);
+      orchestrator.fallbackToNext();
+    }, 2000);
+  }, [orchestrator, mkvWarningShown]);
 
   const onWaiting = useCallback(() => setBuffering(true), []);
   const onPlaying = useCallback(() => {
@@ -321,31 +304,6 @@ export default function StreamPage() {
   const switchFreeSource = useCallback((index: number) => {
     setActiveFreeIndex(index);
   }, []);
-
-
-  // iOS: Show native player options when RD fails or for MKV files
-  const openIOSPlayerModal = useCallback(() => {
-    if (!isIOS()) return;
-    const options = getPlayerOptions(orchestrator.activeFilename);
-    setIosPlayerOptions(options);
-    setShowIOSModal(true);
-  }, [orchestrator.activeFilename]);
-
-  const handleIOSPlayerSelect = useCallback((playerId: string) => {
-    const rdUrl = orchestrator.activePlayableUrl;
-    const returnUrl = window.location.href;
-
-    if (playerId === "infuse" && rdUrl) {
-      window.location.href = buildInfuseUrl({ videoUrl: rdUrl, returnUrl });
-    } else if (playerId === "vlc" && rdUrl) {
-      window.location.href = buildVLCUrl({ videoUrl: rdUrl, returnUrl });
-    } else if (playerId === "free") {
-      setSourceMode("free");
-    } else if (playerId === "rd") {
-      // Already in RD mode, just close modal
-    }
-    setShowIOSModal(false);
-  }, [orchestrator.activePlayableUrl]);
 
   // Loading / Pending / Error states (premium mode)
   const renderPlayerState = () => {
@@ -494,13 +452,6 @@ export default function StreamPage() {
               >
                 <Crown size={10} /> RD
               </button>
-              <button
-                onClick={openIOSPlayerModal}
-                className="flex items-center gap-1 px-2.5 py-1 text-[10px] text-white/60 hover:text-white transition border-l border-white/10"
-                title="Open in native player"
-              >
-                🎬
-              </button>
             </div>
           )}
           {sourceMode === "premium" && (
@@ -642,46 +593,6 @@ export default function StreamPage() {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* iOS Native Player Selection Modal */}
-      {showIOSModal && (
-        <div className="pointer-events-auto absolute inset-0 z-40 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="rounded-xl bg-zinc-900 p-6 shadow-2xl max-w-xs w-full mx-4">
-            <h3 className="mb-1 text-lg font-semibold text-white">Choose Player</h3>
-            <p className="mb-4 text-xs text-white/50">
-              Safari can't play this file directly. Use a native player for best quality.
-            </p>
-            <div className="flex flex-col gap-2">
-              {iosPlayerOptions.map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => handleIOSPlayerSelect(opt.id)}
-                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-left transition ${
-                    opt.recommended
-                      ? "bg-amber-500/20 border border-amber-500/50 hover:bg-amber-500/30"
-                      : "bg-white/5 hover:bg-white/10"
-                  }`}
-                >
-                  <span className="text-xl">{opt.icon}</span>
-                  <div className="flex-1">
-                    <div className={`text-sm font-medium ${opt.recommended ? "text-amber-400" : "text-white"}`}>
-                      {opt.name}
-                      {opt.recommended && <span className="ml-1 text-[10px]">★</span>}
-                    </div>
-                    <div className="text-[11px] text-white/50">{opt.description}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowIOSModal(false)}
-              className="mt-4 w-full rounded-lg bg-white/5 py-2 text-sm text-white/60 hover:bg-white/10 transition"
-            >
-              Cancel
-            </button>
           </div>
         </div>
       )}

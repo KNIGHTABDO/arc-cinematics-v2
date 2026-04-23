@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iOS Native Player Test</title>
+<style>
+body { font-family: -apple-system, sans-serif; background: #0a0a0a; color: #fff; padding: 20px; max-width: 600px; margin: 0 auto; }
+h1 { font-size: 20px; color: #f59e0b; }
+.card { background: #1a1a1a; border-radius: 12px; padding: 16px; margin: 16px 0; }
+.btn { display: block; width: 100%; padding: 14px; margin: 8px 0; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; }
+.btn-infuse { background: #0066cc; color: white; }
+.btn-vlc { background: #ff8800; color: white; }
+.btn-rd { background: #f59e0b; color: black; }
+.btn-free { background: #333; color: white; }
+.url-box { background: #000; padding: 10px; border-radius: 6px; font-size: 11px; word-break: break-all; color: #888; margin: 10px 0; }
+.status { font-size: 12px; color: #666; margin-top: 8px; }
+.device { color: #f59e0b; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>🎬 iOS Native Player Test</h1>
+<p class="status">Device: <span id="device" class="device">Detecting...</span></p>
+
+<div class="card">
+  <h3>Test with Real RD Link</h3>
+  <p style="font-size:12px;color:#888">Paste an unrestricted Real-Debrid link below:</p>
+  <input type="text" id="rdUrl" placeholder="https://real-debrid.com/d/..." style="width:100%;padding:10px;border-radius:6px;border:none;background:#000;color:#fff;font-size:13px;box-sizing:border-box;">
+  
+  <button class="btn btn-infuse" onclick="openInfuse()">▶️ Open in Infuse</button>
+  <button class="btn btn-vlc" onclick="openVLC()">▶️ Open in VLC</button>
+  <button class="btn btn-rd" onclick="openDirect()">▶️ Play Direct (Safari)</button>
+  
+  <div class="url-box" id="infuseUrl">infuse:// URL will appear here</div>
+  <div class="url-box" id="vlcUrl">vlc:// URL will appear here</div>
+</div>
+
+<div class="card">
+  <h3>Test with Sample MKV</h3>
+  <p style="font-size:12px;color:#888">This is a sample MKV URL to test native player compatibility:</p>
+  <button class="btn btn-infuse" onclick="openSampleInfuse()">▶️ Sample in Infuse</button>
+  <button class="btn btn-vlc" onclick="openSampleVLC()">▶️ Sample in VLC</button>
+</div>
+
+<div class="card">
+  <h3>Deep Link Tests (Infuse Library)</h3>
+  <button class="btn btn-infuse" onclick="openInfuseMovie(278)">🎬 Shawshank (TMDB 278)</button>
+  <button class="btn btn-infuse" onclick="openInfuseSeries(1396,1,1)">📺 Breaking Bad S1E1</button>
+</div>
+
+<div class="card">
+  <h3>About These Tests</h3>
+  <p style="font-size:12px;color:#888;line-height:1.6">
+    <b>Infuse</b> — Best iOS player. Supports MKV, HEVC, AC3, DTS, subtitles. Free tier available.<br><br>
+    <b>VLC</b> — Free, open source. Supports any format but less polished.<br><br>
+    <b>Direct</b> — Safari's built-in player. Only works with MP4 + AAC.<br><br>
+    If the app is not installed, nothing will happen (iOS limitation).
+  </p>
+</div>
+
+<script>
+const ua = navigator.userAgent;
+const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && 'ontouchend' in document);
+document.getElementById('device').textContent = isIOS ? 'iOS/iPadOS ✅' : 'Non-iOS';
+
+function getRdUrl() {
+  return document.getElementById('rdUrl').value.trim() || 'https://example.com/video.mkv';
+}
+
+function openInfuse() {
+  const url = getRdUrl();
+  const infuseUrl = 'infuse://x-callback-url/play?url=' + encodeURIComponent(url);
+  document.getElementById('infuseUrl').textContent = infuseUrl;
+  window.location.href = infuseUrl;
+}
+
+function openVLC() {
+  const url = getRdUrl();
+  const vlcUrl = 'vlc-x-callback://x-callback-url/stream?url=' + encodeURIComponent(url);
+  document.getElementById('vlcUrl').textContent = vlcUrl;
+  window.location.href = vlcUrl;
+}
+
+function openDirect() {
+  const url = getRdUrl();
+  window.open(url, '_blank');
+}
+
+function openSampleInfuse() {
+  // Using a known public test video
+  const url = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  window.location.href = 'infuse://x-callback-url/play?url=' + encodeURIComponent(url);
+}
+
+function openSampleVLC() {
+  const url = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  window.location.href = 'vlc-x-callback://x-callback-url/stream?url=' + encodeURIComponent(url);
+}
+
+function openInfuseMovie(tmdbId) {
+  window.location.href = 'infuse://movie/' + tmdbId;
+}
+
+function openInfuseSeries(tmdbId, season, episode) {
+  window.location.href = `infuse://series/${tmdbId}-${season}-${episode}`;
+}
+</script>
+</body>
+</html>
