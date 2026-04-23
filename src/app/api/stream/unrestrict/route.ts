@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { addMagnet, selectTorrentFiles, unrestrictLink, waitForTorrentReady, getTorrentInfo, buildMagnet } from "@/lib/debrid/real-debrid-client";
+import { addMagnet, selectTorrentFiles, unrestrictLink, waitForTorrentReady, getTorrentInfo } from "@/lib/debrid/real-debrid-client";
 
 export const runtime = "edge";
 export const maxDuration = 30;
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing Real-Debrid token" }, { status: 401 });
     }
 
-    const magnet = buildMagnet(infoHash, title);
+    const magnet = `magnet:?xt=urn:btih:${infoHash}`;
     let torrentId = existingTorrentId;
 
     // Step 1: Add magnet (if no existing torrentId)

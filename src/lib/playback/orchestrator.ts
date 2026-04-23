@@ -19,6 +19,64 @@ interface UnrestrictResponse {
   error?: string;
 }
 
+interface TorrentioStream {
+  name?: string;
+  title?: string;
+  infoHash?: string;
+  behaviorHints?: { bingeGroup?: string };
+}
+
+interface TorrentioResponse {
+  streams?: TorrentioStream[];
+}
+
+function parseTorrentio(data: TorrentioResponse): TorrentStream[] {
+  const streams = data.streams || [];
+  return streams
+    .map((s) => {
+      const infoHash = s.infoHash?.trim().toLowerCase();
+      if (!infoHash || infoHash.length !== 40) return null;
+      if (!/^[a-f0-9]{40}$/.test(infoHash)) return null;
+      if (infoHash === "0".repeat(40)) return null;
+      const title = s.title || s.name || `Stream ${infoHash.slice(0, 8)}`;
+      // Extract quality hint from title
+      const quality = /2160p|4k/i.test(title) ? "2160p" : /1080p/i.test(title) ? "1080p" : /720p/i.test(title) ? "720p" : "SD";
+      return {
+        title: `${quality} · ${title}`.slice(0, 120),
+        infoHash,
+        sizeBytes: 0,
+        seeders: 100, // Torrentio streams are typically well-seeded
+        source: "torrentio",
+      } as TorrentStream;
+    })
+    .filter(Boolean) as TorrentStream[];
+}
+
+async function fetchTorrentio(tmdbId: string, mediaType: "movie" | "tv", season?: number, episode?: number): Promise<TorrentStream[]> {
+  let url: string;
+  if (mediaType === "tv" && season !== undefined && episode !== undefined) {
+    url = `https://torrentio.strem.fun/stream/series/${tmdbId}:${season}:${episode}.json`;
+  } else {
+    url = `https://torrentio.strem.fun/stream/movie/${tmdbId}.json`;
+  }
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) return [];
+  const data = (await res.json()) as TorrentioResponse;
+  return parseTorrentio(data);
+}
+
+async function fetchTPB(tmdbId: string, mediaType: "movie" | "tv", season?: number, episode?: number): Promise<TorrentStream[]> {
+  const url = new URL("/api/stream/resolve", window.location.origin);
+  url.searchParams.set("tmdbId", tmdbId);
+  url.searchParams.set("type", mediaType);
+  if (season) url.searchParams.set("season", String(season));
+  if (episode) url.searchParams.set("episode", String(episode));
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  const data = (await res.json()) as StreamResponse;
+  return data.streams || [];
+}
+
 export function usePlaybackOrchestrator(params: {
   tmdbId: string;
   mediaType: "movie" | "tv";
@@ -37,7 +95,7 @@ export function usePlaybackOrchestrator(params: {
   const resumeSaved = useRef(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 1. Resolve streams on mount
+  // 1. Resolve streams on mount — try Torrentio client-side first, then TPB fallback
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -45,21 +103,22 @@ export function usePlaybackOrchestrator(params: {
       setError(null);
       setPendingStatus(null);
       try {
-        const url = new URL("/api/stream/resolve", window.location.origin);
-        url.searchParams.set("tmdbId", params.tmdbId);
-        url.searchParams.set("type", params.mediaType);
-        if (params.seasonNumber) url.searchParams.set("season", String(params.seasonNumber));
-        if (params.episodeNumber) url.searchParams.set("episode", String(params.episodeNumber));
+        // Try Torrentio first (client-side = bypasses Vercel Cloudflare block)
+        let streams = await fetchTorrentio(params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber);
+        let source = "torrentio";
 
-        const res = await fetch(url.toString());
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Stream resolution failed (${res.status})`);
+        // Fallback to TPB if Torrentio returns nothing
+        if (streams.length === 0) {
+          streams = await fetchTPB(params.tmdbId, params.mediaType, params.seasonNumber, params.episodeNumber);
+          source = "thepiratebay";
         }
-        const data = (await res.json()) as StreamResponse;
+
         if (!cancelled) {
-          setScoredStreams(data.streams || []);
+          setScoredStreams(streams);
           setCurrentIndex(0);
+          if (streams.length === 0) {
+            setError("No streams found. This title may not be available yet.");
+          }
         }
       } catch (e: any) {
         if (!cancelled) setError(e.message || "Failed to resolve streams");

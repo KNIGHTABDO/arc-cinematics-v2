@@ -46,38 +46,19 @@ async function rdFetch<T>(
 }
 
 export async function addMagnet(token: string, magnet: string): Promise<{ id: string }> {
-  // Only encode '=' in magnet to prevent form parsing issues
-  // RD rejects fully URL-encoded magnets (: and ? must stay raw)
-  const body = `magnet=${magnet.replace(/=/g, "%3D")}`;
+  // v1 used URLSearchParams and it worked — keep it
+  const body = new URLSearchParams({ magnet });
   return rdFetch<{ id: string }>("/torrents/addMagnet", token, {
     method: "POST",
     body,
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
 }
 
-export function buildMagnet(infoHash: string, name?: string): string {
-  const trackers = [
-    "udp://tracker.openbittorrent.com:80/announce",
-    "udp://tracker.opentrackr.org:1337/announce",
-    "udp://tracker.coppersurfer.tk:6969/announce",
-  ];
-  let magnet = `magnet:?xt=urn:btih:${infoHash}`;
-  if (name) {
-    magnet += `&dn=${encodeURIComponent(name)}`;
-  }
-  for (const tr of trackers) {
-    magnet += `&tr=${encodeURIComponent(tr)}`;
-  }
-  return magnet;
-}
-
 export async function selectTorrentFiles(token: string, torrentId: string, files = "all"): Promise<unknown> {
-  const body = `files=${files}`;
+  const body = new URLSearchParams({ files });
   return rdFetch(`/torrents/selectFiles/${torrentId}`, token, {
     method: "POST",
     body,
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
 }
 
@@ -86,11 +67,10 @@ export async function getTorrentInfo(token: string, torrentId: string): Promise<
 }
 
 export async function unrestrictLink(token: string, link: string): Promise<{ download: string; filename?: string }> {
-  const body = `link=${link}`;
+  const body = new URLSearchParams({ link });
   return rdFetch<{ download: string; filename?: string }>("/unrestrict/link", token, {
     method: "POST",
     body,
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
 }
 
