@@ -4,7 +4,7 @@
 - Route name collision — renamed stream route to `watch` to prevent Next.js 500 errors on `/stream/[id]`
 
 ### Changed
-- Stream pages now live at `/videos/:id` instead of `/stream/:id`
+- Stream pages now live at `/play/:id` instead of `/stream/:id`
 - Navigation updated across app (tv, title, browse, continue-watching, navbar)
 
 # Changelog

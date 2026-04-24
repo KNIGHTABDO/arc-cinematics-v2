@@ -25,15 +25,15 @@ Next-generation serverless streaming platform. Rebuilt from zero on Next.js 15 A
 | `/browse?type=tv` | TV only |
 | `/title/[id]` | Movie detail page with cast, crew, similar |
 | `/tv/[id]` | TV show detail with season/episode grid |
-| `/videos/[id]` | **Player** — movie playback |
-| `/videos/tv-X-sYeZ` | **Player** — TV episode playback |
+| `/play/[id]` | **Player** — movie playback |
+| `/play/tv-X-sYeZ` | **Player** — TV episode playback |
 | `/search?q=...` | Search movies + TV |
 | `/settings` | BYOD token, quality, subtitle language |
 
 ## Edge API Routes
 
-- `GET /api/videos/resolve?tmdbId=&type=` — Resolve streams via Torrentio, score, cache in Supabase
-- `POST /api/videos/unrestrict` — Unrestrict magnet using user's RD token
+- `GET /api/play/resolve?tmdbId=&type=` — Resolve streams via Torrentio, score, cache in Supabase
+- `POST /api/play/unrestrict` — Unrestrict magnet using user's RD token
 - `GET /api/subtitles/proxy?tmdbId=&lang=` — CORS-safe subtitle proxy (SRT→VTT)
 - `GET|POST /api/playback/history` — Resume position persistence
 
