@@ -3,7 +3,7 @@
 
 const REMUX_PROXY_URL =
   process.env.NEXT_PUBLIC_REMUX_PROXY_URL ||
-  "https://nutritional-functional-traveller-kelkoo.trycloudflare.com";
+  "https://boston-headline-upgrade-entry.trycloudflare.com";
 
 export function getRemuxUrl(rawVideoUrl: string): string {
   if (!rawVideoUrl || !rawVideoUrl.startsWith("http")) return rawVideoUrl;
