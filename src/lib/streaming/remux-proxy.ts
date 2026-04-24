@@ -20,7 +20,7 @@ export function isRemuxNeeded(filename?: string): boolean {
 }
 
 export function isSafariiOS(): boolean {
-  if (typeof navigator === "undefined") return false;
+  if (typeof navigator === "undefined" || typeof document === "undefined") return false;
   const ua = navigator.userAgent;
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
   const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);

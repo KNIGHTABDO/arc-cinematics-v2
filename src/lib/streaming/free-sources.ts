@@ -44,7 +44,7 @@ export function buildFreeEmbedUrls(params: {
 }
 
 export function isIOS(): boolean {
-  if (typeof navigator === "undefined") return false;
+  if (typeof navigator === "undefined" || typeof document === "undefined") return false;
   const ua = navigator.userAgent;
   return /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
 }
