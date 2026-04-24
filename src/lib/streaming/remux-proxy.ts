@@ -3,7 +3,7 @@
 
 const REMUX_PROXY_URL =
   process.env.NEXT_PUBLIC_REMUX_PROXY_URL ||
-  "https://boston-headline-upgrade-entry.trycloudflare.com";
+  "http://100.111.8.93:8788";
 
 export function getRemuxUrl(rawVideoUrl: string): string {
   if (!rawVideoUrl || !rawVideoUrl.startsWith("http")) return rawVideoUrl;
