@@ -53,9 +53,9 @@ export default function ContinueWatchingRow({ items }: { items: WatchHistoryItem
 
   const getLink = (item: EnrichedItem) => {
     if (item.media_type === "tv" && item.season_number !== undefined && item.episode_number !== undefined) {
-      return `/watch/tv-${item.tmdb_id}-s${item.season_number}e${item.episode_number}`;
+      return `/videos/tv-${item.tmdb_id}-s${item.season_number}e${item.episode_number}`;
     }
-    return `/watch/${item.tmdb_id}`;
+    return `/videos/${item.tmdb_id}`;
   };
 
   const formatTime = (ms: number) => {

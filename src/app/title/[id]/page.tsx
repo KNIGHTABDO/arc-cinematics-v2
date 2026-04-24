@@ -120,7 +120,7 @@ export default function TitleDetailPage() {
               className="mt-6 flex items-center gap-3"
             >
               <Link
-                href={`/watch/${movie.id}`}
+                href={`/videos/${movie.id}`}
                 className="flex items-center gap-2 rounded bg-amber-500 px-6 py-2.5 text-sm font-semibold text-black transition hover:bg-amber-400 hover:scale-105 active:scale-95"
               >
                 <Play size={16} fill="black" /> Watch Now

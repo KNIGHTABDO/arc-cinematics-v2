@@ -1,5 +1,0 @@
-"use client";
-
-export default function WatchPage() {
-  return <div className="p-8 text-white">Minimal watch/[id] page — if this loads, page code was crashing</div>;
-}
