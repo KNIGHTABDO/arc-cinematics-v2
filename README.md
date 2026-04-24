@@ -37,6 +37,27 @@ Next-generation serverless streaming platform. Rebuilt from zero on Next.js 15 A
 - `GET /api/subtitles/proxy?tmdbId=&lang=` — CORS-safe subtitle proxy (SRT→VTT)
 - `GET|POST /api/playback/history` — Resume position persistence
 
+## iOS Safari Support (MKV/AC3)
+
+Safari on iOS cannot play MKV containers or AC3/DTS audio natively. The app handles this with a **remux proxy** that transcodes audio to AAC in real-time while copying video losslessly:
+
+1. **Oracle OCI Remux Proxy** (recommended): Set `NEXT_PUBLIC_REMUX_PROXY_URL` to your tunnel (e.g. Cloudflare Tunnel pointing to an Oracle A1.Flex instance running ffmpeg).
+   - Video: passthrough (zero quality loss)
+   - Audio: AC3/DTS → AAC 192k stereo
+   - Output: Fragmented MP4 streamed directly to Safari
+
+2. **Fallback**: If the remux proxy fails or is unset, iOS users see a modal to open the stream in **Infuse** or **VLC** native apps.
+
+### Running the Remux Proxy
+
+```bash
+cd /home/ubuntu/arc-remux-proxy
+node server.js        # listens on :8788
+cloudflared tunnel --url http://localhost:8788
+```
+
+Then set `NEXT_PUBLIC_REMUX_PROXY_URL=https://your-tunnel.trycloudflare.com` in Vercel.
+
 ## Database Schema
 
 Run these SQL files in your Supabase SQL Editor (in order):

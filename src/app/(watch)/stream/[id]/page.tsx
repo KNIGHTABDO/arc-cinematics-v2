@@ -7,6 +7,7 @@ import { usePlaybackOrchestrator } from "@/lib/playback/orchestrator";
 import { Play, Pause, Volume2, VolumeX, Maximize, Settings, RefreshCw, ArrowRight, Globe, Crown } from "lucide-react";
 import { buildFreeEmbedUrls } from "@/lib/streaming/free-sources";
 import { isIOS, buildInfuseUrl, buildVLCUrl, getPlayerOptions } from "@/lib/streaming/ios-players";
+import { getRemuxUrl, isRemuxNeeded, isSafariiOS } from "@/lib/streaming/remux-proxy";
 
 type ParsedId = {
   mediaType: "movie" | "tv";
@@ -62,6 +63,20 @@ export default function StreamPage() {
   // iOS native player modal
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [iosPlayerOptions, setIosPlayerOptions] = useState<{id: string, name: string, description: string, icon: string, recommended: boolean}[]>([]);
+  // Remux proxy state
+  const [remuxFailed, setRemuxFailed] = useState(false);
+
+  // Compute video source: remux for iOS Safari + MKV, else raw RD link
+  const videoSrc = useMemo(() => {
+    const raw = orchestrator.activePlayableUrl;
+    if (!raw) return null;
+    const needsRemux = isRemuxNeeded(orchestrator.activeFilename);
+    const safariIOS = isSafariiOS();
+    if (needsRemux && safariIOS && !remuxFailed) {
+      return getRemuxUrl(raw);
+    }
+    return raw;
+  }, [orchestrator.activePlayableUrl, orchestrator.activeFilename, remuxFailed]);
 
 
   // Free stream state (iOS only)
@@ -148,17 +163,28 @@ export default function StreamPage() {
     playAttemptTimer.current = setTimeout(() => {
       if (!isPlaying && !buffering) {
         const isMkv = orchestrator.activeFilename?.toLowerCase().endsWith(".mkv");
-        setPlayerError(isMkv ? "MKV not loading. Trying next stream..." : "Stream not loading. Trying next...");
-        setTimeout(() => {
-          setPlayerError(null);
-          orchestrator.fallbackToNext();
-        }, 1500);
+        const safariIOS = isSafariiOS();
+        const usingRemux = videoSrc !== orchestrator.activePlayableUrl;
+        if (safariIOS && usingRemux) {
+          setPlayerError("Remux not starting. Opening native player...");
+          setRemuxFailed(true);
+          setTimeout(() => {
+            setPlayerError(null);
+            openIOSPlayerModal();
+          }, 1500);
+        } else {
+          setPlayerError(isMkv ? "MKV not loading. Trying next stream..." : "Stream not loading. Trying next...");
+          setTimeout(() => {
+            setPlayerError(null);
+            orchestrator.fallbackToNext();
+          }, 1500);
+        }
       }
     }, 10000);
     return () => {
       if (playAttemptTimer.current) clearTimeout(playAttemptTimer.current);
     };
-  }, [orchestrator.activePlayableUrl, orchestrator.activeFilename, isPlaying, buffering, sourceMode]);
+  }, [orchestrator.activePlayableUrl, orchestrator.activeFilename, isPlaying, buffering, sourceMode, videoSrc]);
 
   // Resume position
   useEffect(() => {
@@ -189,6 +215,20 @@ export default function StreamPage() {
 
   const onError = useCallback(() => {
     const isMkv = orchestrator.activeFilename?.toLowerCase().endsWith(".mkv");
+    const safariIOS = isSafariiOS();
+    const usingRemux = videoSrc !== orchestrator.activePlayableUrl;
+
+    if (safariIOS && usingRemux) {
+      // Remux proxy failed — fall back to native app modal immediately
+      setRemuxFailed(true);
+      setPlayerError("Server remux failed. Opening native player...");
+      setTimeout(() => {
+        setPlayerError(null);
+        openIOSPlayerModal();
+      }, 1500);
+      return;
+    }
+
     if (isMkv && !mkvWarningShown) {
       setMkvWarningShown(true);
       if (isIOS()) {
@@ -211,7 +251,7 @@ export default function StreamPage() {
         orchestrator.fallbackToNext();
       }, 2000);
     }
-  }, [orchestrator, mkvWarningShown, openIOSPlayerModal]);
+  }, [orchestrator, mkvWarningShown, openIOSPlayerModal, videoSrc]);
 
   const onWaiting = useCallback(() => setBuffering(true), []);
   const onPlaying = useCallback(() => {
@@ -432,10 +472,10 @@ export default function StreamPage() {
       {renderPlayerState()}
 
       {/* PREMIUM PLAYER (RD) */}
-      {sourceMode === "premium" && orchestrator.activePlayableUrl && (
+      {sourceMode === "premium" && videoSrc && (
         <video
           ref={videoRef}
-          src={orchestrator.activePlayableUrl}
+          src={videoSrc}
           crossOrigin="anonymous"
           playsInline
           className="h-full w-full"
