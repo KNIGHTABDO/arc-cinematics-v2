@@ -66,35 +66,13 @@ export default function StreamPage() {
   // Remux proxy state
   const [remuxFailed, setRemuxFailed] = useState(false);
 
-  // Compute video source: remux for iOS Safari + MKV, else raw RD link
-  const videoSrc = useMemo(() => {
-    const raw = orchestrator.activePlayableUrl;
-    if (!raw) return null;
-    const needsRemux = isRemuxNeeded(orchestrator.activeFilename);
-    const safariIOS = isSafariiOS();
-    if (needsRemux && safariIOS && !remuxFailed) {
-      return getRemuxUrl(raw);
-    }
-    return raw;
-  }, [orchestrator.activePlayableUrl, orchestrator.activeFilename, remuxFailed]);
-
-
   // Free stream state (iOS only)
   const [sourceMode, setSourceMode] = useState<SourceMode>("premium");
   const [freeSources, setFreeSources] = useState<{ name: string; url: string }[]>([]);
   const [activeFreeIndex, setActiveFreeIndex] = useState(0);
   const [iosDetected, setIosDetected] = useState(false);
 
-  const orchestrator = usePlaybackOrchestrator({
-    tmdbId: parsed.tmdbId,
-    mediaType: parsed.mediaType,
-    seasonNumber: parsed.season,
-    episodeNumber: parsed.episode,
-    profileId: activeProfile?.id,
-    userId: user?.id,
-  });
-
-  // Detect iOS and prepare free sources
+  // Detect iOS and prepare free sources (do NOT auto-switch to free — let user decide)
   useEffect(() => {
     const ios = isIOS();
     setIosDetected(ios);
@@ -106,10 +84,31 @@ export default function StreamPage() {
         episode: parsed.episode,
       });
       setFreeSources(sources);
-      // Default iOS to free mode for instant playback
-      setSourceMode("free");
+      // Keep sourceMode as "premium" — user can toggle to free manually
     }
   }, [parsed.tmdbId, parsed.mediaType, parsed.season, parsed.episode]);
+
+  const orchestrator = usePlaybackOrchestrator({
+    tmdbId: parsed.tmdbId,
+    mediaType: parsed.mediaType,
+    seasonNumber: parsed.season,
+    episodeNumber: parsed.episode,
+    profileId: activeProfile?.id,
+    userId: user?.id,
+  });
+
+  // Compute video source: remux for iOS Safari + MKV, else raw RD link
+  // MUST be declared AFTER orchestrator so the variable exists when useMemo reads it
+  const videoSrc = useMemo(() => {
+    const raw = orchestrator.activePlayableUrl;
+    if (!raw) return null;
+    const needsRemux = isRemuxNeeded(orchestrator.activeFilename);
+    const safariIOS = isSafariiOS();
+    if (needsRemux && safariIOS && !remuxFailed) {
+      return getRemuxUrl(raw);
+    }
+    return raw;
+  }, [orchestrator.activePlayableUrl, orchestrator.activeFilename, remuxFailed]);
 
   // Auth + profile gates
   useEffect(() => {
