@@ -25,7 +25,7 @@ export function Navbar() {
     if (query.trim()) router.push(`/search?q=${encodeURIComponent(query.trim())}`);
   };
 
-  if (pathname?.startsWith("/stream/")) return null;
+  if (pathname?.startsWith("/watch/")) return null;
 
   return (
     <nav className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${scrolled ? "bg-black/90 backdrop-blur-md" : "bg-transparent"}`}>

@@ -1,3 +1,12 @@
+## [Unreleased]
+
+### Fixed
+- Route name collision — renamed stream route to `watch` to prevent Next.js 500 errors on `/stream/[id]`
+
+### Changed
+- Stream pages now live at `/watch/:id` instead of `/stream/:id`
+- Navigation updated across app (tv, title, browse, continue-watching, navbar)
+
 # Changelog
 
 ## 2026-04-23 — SCORCHED EARTH v2.0

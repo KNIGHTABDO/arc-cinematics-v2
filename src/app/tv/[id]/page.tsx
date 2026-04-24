@@ -163,7 +163,7 @@ export default function TVDetailPage() {
                 return (
                   <Link
                     key={ep}
-                    href={`/stream/tv-${id}-s${s.season_number}e${ep}`}
+                    href={`/watch/tv-${id}-s${s.season_number}e${ep}`}
                     className="flex items-center gap-1 rounded bg-zinc-800/80 px-3 py-1.5 text-xs hover:bg-amber-500 hover:text-black transition"
                   >
                     <Play size={10} /> E{ep}
