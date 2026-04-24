@@ -16,10 +16,18 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) setError(error.message);
-    else router.push("/profiles");
+    try {
+      console.log("[v0] Attempting login with:", { email });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      console.log("[v0] Login response:", { error });
+      setLoading(false);
+      if (error) setError(error.message);
+      else router.push("/profiles");
+    } catch (err) {
+      console.log("[v0] Login error:", err);
+      setLoading(false);
+      setError("Failed to connect to authentication service. Make sure Supabase is configured in your environment variables.");
+    }
   };
 
   return (

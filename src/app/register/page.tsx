@@ -16,21 +16,29 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
+    try {
+      console.log("[v0] Attempting registration with:", { email });
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      console.log("[v0] Register response:", { data, error });
+      setLoading(false);
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      // Create default profile immediately if user is signed in
+      if (data.user) {
+        await supabase.from("profiles").insert({
+          user_id: data.user.id,
+          name: "Default",
+          is_kids: false,
+        }).select().single();
+      }
+      router.push("/login?registered=1");
+    } catch (err) {
+      console.log("[v0] Register error:", err);
+      setLoading(false);
+      setError("Failed to connect to authentication service. Make sure Supabase is configured in your environment variables.");
     }
-    // Create default profile immediately if user is signed in
-    if (data.user) {
-      await supabase.from("profiles").insert({
-        user_id: data.user.id,
-        name: "Default",
-        is_kids: false,
-      }).select().single();
-    }
-    router.push("/login?registered=1");
   };
 
   return (
