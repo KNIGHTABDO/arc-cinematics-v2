@@ -1,7 +1,7 @@
 ## [Unreleased]
 
 ### Fixed
-- Route name collision — renamed stream route to `watch` to prevent Next.js 500 errors on `/stream/[id]`
+- Route name collision — renamed stream route to `play` to prevent Next.js 500 errors on `/stream/[id]`
 
 ### Changed
 - Stream pages now live at `/play/:id` instead of `/stream/:id`
