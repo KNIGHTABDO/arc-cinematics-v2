@@ -34,7 +34,8 @@ interface TorrentioResponse {
 
 function getClientCapabilities() {
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
+  const hasDocument = typeof document !== "undefined";
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (hasDocument && ua.includes("Mac") && "ontouchend" in document);
   const supportsHEVC = isIOS && /iP(hone|ad|od) OS 1[1-9]|Mac OS X 1[0-9]/.test(ua);
   return { isIOS, supportsHEVC, preferredLanguage: "en" };
 }
